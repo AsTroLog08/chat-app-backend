@@ -22,7 +22,7 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
     cors: {
         // ❗ ЗМІНІТЬ ЦЕЙ АДРЕС НА URL ВАШОГО REACT-КЛІЄНТА (наприклад, http://localhost:5173 або 3000)
-        origin: "http://localhost:5173", 
+        origin: "https://chat-app-frontend-3tao.onrender.com", 
         methods: ["GET", "POST"]
     }
 });
