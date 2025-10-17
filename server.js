@@ -1,93 +1,74 @@
-import express from "express";
-import mongoose from "mongoose";
-import cors from 'cors';
-import dotevn from 'dotenv';
+import express from "express"
+import mongoose from "mongoose"
+import cors from 'cors'
+import dotevn from 'dotenv'
+import chatRoutes from './routes/chatRoutes.js'; 
+import authRoutes from './routes/authRoutes.js'; 
 import http from 'http';
 import { Server } from "socket.io";
 
-// Імпорт маршрутів
-import chatRoutes from './routes/chatRoutes.js'; 
-import authRoutes from './routes/authRoutes.js'; 
-
 // ====================================================================
-// A. ІНІЦІАЛІЗАЦІЯ ТА КОНФІГУРАЦІЯ
+// НАЛАШТУВАННЯ СЕРВЕРА
 // ====================================================================
-
 dotevn.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// Створення HTTP-сервера для Express та Socket.IO
+// 🚩 Створення HTTP-сервера для Express та Socket.IO
 const httpServer = http.createServer(app); 
 
-// Ініціалізація Socket.IO
+// 🚩 Ініціалізація Socket.IO
 const io = new Server(httpServer, {
     cors: {
-        origin: process.env.CLIENT_URL || "https://chat-app-frontend-3tao.onrender.com", 
-        methods: ["GET", "POST", "PUT", "DELETE"],
-        credentials: true
+        // ❗ ЗМІНІТЬ ЦЕЙ АДРЕС НА URL ВАШОГО REACT-КЛІЄНТА (наприклад, http://localhost:5173 або 3000)
+        origin: "https://chat-app-frontend-3tao.onrender.com", 
+        methods: ["GET", "POST"]
     }
 });
 
-// Експортуємо io для використання в контролерах (наприклад, для sendMessage)
+// 🚩 Експортуємо io, щоб використовувати його в контролерах (sendMessage)
 export const ioInstance = io; 
 
 // Middleware
-app.use(cors({ 
-    origin: process.env.CLIENT_URL || "https://chat-app-frontend-3tao.onrender.com",
-    credentials: true 
-}));
-app.use(express.json()); 
+app.use(cors()); // Дозволяємо крос-доменні запити
+app.use(express.json()); // Дозволяємо Express парсити JSON тіла запитів
 
-// ====================================================================
-// B. ПІДКЛЮЧЕННЯ ДО БД
-// ====================================================================
-
+// 3. Підключення до MongoDB Atlas
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ Successfully connected to MongoDB Atlas!'))
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err.message);
-    process.exit(1);
-  });
+  .then(() => console.log('Successfully connected to MongoDB Atlas!'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-// ====================================================================
-// C. МАРШРУТИЗАЦІЯ
-// ====================================================================
-
+// 4. Основний маршрут (перевірка роботи сервера)
 app.get("/", (req, res) => {
-  res.send("Chat API is running... 🚀");
+  res.send("Chat API is running...");
 });
 
+app.use("/api/chats", chatRoutes);
+app.use("/api/messages", chatRoutes);
 app.use("/api/users", authRoutes);
-app.use("/api/chats", chatRoutes); 
 
 app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
+  res.status(404).send("Route not found");
 });
 
-// ====================================================================
-// D. SOCKET.IO ЛОГІКА
-// ====================================================================
-
+// 🚩 ЛОГІКА SOCKET.IO ПІДКЛЮЧЕННЯ
 io.on('connection', (socket) => {
-    // console.log(`User connected: ${socket.id}`);
+    console.log(`User connected: ${socket.id}`);
 
+    // Дозволяємо клієнту приєднатися до "кімнати" за ID чату
     socket.on('join_chat', (chatId) => {
         socket.join(chatId);
-        // console.log(`User ${socket.id} joined room: ${chatId}`);
+        console.log(`User ${socket.id} joined room: ${chatId}`);
     });
 
     socket.on('disconnect', () => {
-        // console.log(`User disconnected: ${socket.id}`);
+        console.log(`User disconnected: ${socket.id}`);
     });
 });
 
-// ====================================================================
-// E. ЗАПУСК СЕРВЕРА
-// ====================================================================
-
+// 6. Запуск сервера
 httpServer.listen(PORT, () => {
-  console.log(`💻 Server is running on port ${PORT}`);
-  // console.log(`Open http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
+  console.log(`Open http://localhost:${PORT}`);
 });
