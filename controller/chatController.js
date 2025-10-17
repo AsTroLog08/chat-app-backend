@@ -3,93 +3,91 @@ import Message from '../models/message.js';
 import { ioInstance } from '../server.js';
 import { dogCeo } from '../utils/dogCeo.js';
 import { getQuote } from '../utils/quotable.js';
-import mongoose from 'mongoose';
+import mongoose from 'mongoose'; 
 
 // ====================================================================
-// A. УТИЛІТИ
+// A. ЧАТИ (CRUD & INITIALIZATION)
 // ====================================================================
 
 /**
  * Отримує ID власника/гостя з заголовків або JWT payload.
+ * @param {object} req - Об'єкт запиту
+ * @returns {string|null} - ID власника/гостя
  */
 const getOwnerId = (req) => {
-    return req.headers["x-guest-id"] || req.user?.id;
+    // req.user?.id встановлюється JWT middleware
+    return req.headers["x-guest-id"] || req.user?.id; 
 };
 
 /**
- * Стандартні дані для ініціалізації шаблонних чатів.
- */
-const DEFAULT_CHAT_TEMPLATES = [
-    { firstName: "Alice", lastName: "Freeman", avatarUrl: "https://cdn-icons-png.flaticon.com/512/428/428573.png" },
-    { firstName: "Helen", lastName: "Fischer", avatarUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnSA1zygA3rubv-VK0DrVcQ02Po79kJhXo_A&s" },
-    { firstName: "Piter", lastName: "Steele", avatarUrl: "https://cdn-icons-png.flaticon.com/512/219/219983.png" },
-];
-
-/**
- * Стандартні повідомлення для ініціалізації чатів.
- */
-const INITIAL_CONVERSATIONS = [
-    [
-        { text: "Hello", sender: 'user', incoming: false },
-        { text: "Hi", sender: 'auto_response', incoming: true },
-        { text: "Will we meet?", sender: 'user', incoming: false },
-    ],
-    [
-        { text: "Доброго дня", sender: 'user', incoming: false },
-        { text: "Доброго", sender: 'auto_response', incoming: true },
-        { text: "Ми вас чекаємо на зустрічі о 11.00", sender: 'auto_response', incoming: true },
-    ],
-    [
-        { text: "Доброго дня", sender: 'auto_response', incoming: true },
-        { text: "Вас цікавить ковбаса?", sender: 'auto_response', incoming: true },
-    ],
-];
-
-/**
- * Ініціалізує стандартні повідомлення для чатів.
+ * Ініціалізує стандартні повідомлення для чатів
+ * @param {Array} chats - Масив щойно створених чатів
+ * @param {string} ownerId - ID власника
+ * @returns {Promise<Array>} - Вставлені повідомлення
  */
 const insertDefaultMessages = async (chats, ownerId) => {
+    // Встановлюємо базову мітку часу і невелику затримку (наприклад, 100 мс)
     let currentTimestamp = Date.now();
     const delayMs = 100;
 
     const messagesToInsert = chats.flatMap((chat, index) => {
-        const conversation = INITIAL_CONVERSATIONS[index] || [];
+        let conversation = [];
+        
+        if (index === 0) { // Alice Freeman
+            conversation = [
+                { text: "Hello", sender: 'user', incoming: false },
+                { text: "Hi", sender: 'auto_response', incoming: true },
+                { text: "Will we meet?", sender: 'user', incoming: false },
+            ];
+        } else if (index === 1) { // Helen Fischer
+            conversation = [
+                { text: "Доброго дня", sender: 'user', incoming: false },
+                { text: "Доброго", sender: 'auto_response', incoming: true },
+                { text: "Ми вас чекаємо на зустрічі о 11.00", sender: 'auto_response', incoming: true },
+            ];
+        } else if (index === 2) { // Piter Steele
+            conversation = [
+                { text: "Доброго дня", sender: 'auto_response', incoming: true },
+                { text: "Вас цікавить ковбаса?", sender: 'auto_response', incoming: true },
+            ];
+        }
 
+        // Встановлюємо унікальну мітку часу для кожного повідомлення
         return conversation.map(msg => {
-            currentTimestamp += delayMs;
+            currentTimestamp += delayMs; // Збільшуємо час на 100 мс
             const uniqueTime = new Date(currentTimestamp);
-
+            
             return {
                 ...msg,
                 chat: chat._id,
                 senderId: msg.incoming ? chat._id.toString() : ownerId,
-                createdAt: uniqueTime,
-                timestamp: uniqueTime,
+                // ЯВНО ВСТАНОВЛЮЄМО унікальні мітки часу
+                createdAt: uniqueTime, 
+                timestamp: uniqueTime, 
             };
         });
     });
 
+    // Mongoose використає ці явні мітки часу під час insertMany
     return Message.insertMany(messagesToInsert);
 };
 
-// ====================================================================
-// B. КОНТРОЛЕРИ ЧАТІВ (CRUD & INITIALIZATION)
-// ====================================================================
 
 /**
- * Отримати список усіх чатів (з останнім повідомленням). Ініціалізує, якщо чатів немає.
+ * Отримати список усіх чатів (з останнім повідомленням). 
+ * Якщо чатів немає, створює базові шаблони.
  * @route GET /api/chats
  */
 export const getChats = async (req, res) => {
     const ownerId = getOwnerId(req);
-
-    if (!ownerId) {
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
+    if (!ownerId)
         return res.status(401).json({ message: "Authentication required." });
-    }
 
     const { q } = req.query;
     const query = { ownerId };
-
+    
+    // Додавання пошуку до запиту, якщо є 'q'
     if (q) {
         query.$or = [
             { firstName: { $regex: q, $options: "i" } },
@@ -103,32 +101,40 @@ export const getChats = async (req, res) => {
             .populate("lastMessage")
             .exec();
 
-        // ІНІЦІАЛІЗАЦІЯ (тільки при першому вході та без пошукового запиту)
+        // ❗ ЛОГІКА ІНІЦІАЛІЗАЦІЇ: Створюємо чати, якщо це перший вхід (немає чатів і немає пошуку)
         if (chats.length === 0 && q === undefined) {
             
+            // 1. Отримуємо або створюємо шаблонні чати
             let defaultTemplates = await Chat.find({ isTemplate: true });
 
             if (defaultTemplates.length === 0) {
-                const templatesToInsert = DEFAULT_CHAT_TEMPLATES.map(tpl => ({ ...tpl, isTemplate: true, ownerId: 'base' }));
-                defaultTemplates = await Chat.insertMany(templatesToInsert);
+                defaultTemplates = await Chat.insertMany([
+                    { firstName: "Alice", lastName: "Freeman", isTemplate: true, avatarUrl:"https://cdn-icons-png.flaticon.com/512/428/428573.png",ownerId: 'base' },
+                    { firstName: "Helen", lastName: "Fischer", isTemplate: true, avatarUrl:"https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnSA1zygA3rubv-VK0DrVcQ02Po79kJhXo_A&s",ownerId: 'base'  },
+                    { firstName: "Piter", lastName: "Steele", isTemplate: true, avatarUrl:"https://cdn-icons-png.flaticon.com/512/219/219983.png",ownerId: 'base'  },
+                ]);
             }
 
+            // 2. Клонуємо шаблони для поточного користувача/гостя
             const userChatsData = defaultTemplates.map((tpl) => ({
                 firstName: tpl.firstName,
                 lastName: tpl.lastName,
                 avatarUrl: tpl.avatarUrl,
-                ownerId,
+                ownerId, // Встановлюємо ID поточного власника
                 isTemplate: false,
             }));
 
-            const insertedChats = await Chat.insertMany(userChatsData);
+            const insertedChats = await Chat.insertMany(userChatsData); 
+            
+            // 3. Формуємо та вставляємо повідомлення
             const insertedMessages = await insertDefaultMessages(insertedChats, ownerId);
-
-            // Оновлення посилання на останнє повідомлення (Bulk Write)
+            
+            // 4. Оновлюємо чати, встановлюючи lastMessage (Bulk Write)
             const bulkOperations = insertedChats.map(chat => {
+                // Знаходимо останнє повідомлення, пов'язане з цим чатом
                 const lastMsg = insertedMessages
                     .filter(msg => msg.chat.toString() === chat._id.toString())
-                    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+                    .sort((a, b) => b.timestamp - a.timestamp)[0]; // Сортуємо за createdAt
 
                 return {
                     updateOne: {
@@ -140,52 +146,59 @@ export const getChats = async (req, res) => {
 
             await Chat.bulkWrite(bulkOperations);
             
-            // Повторне завантаження, щоб включити lastMessage
+            // 5. Завантажуємо оновлений список чатів (з populated lastMessage)
             chats = await Chat.find({ ownerId }).sort({ createdAt: -1 }).populate("lastMessage");
         }
         
         res.status(200).json(chats);
     } catch (error) {
-        console.error('Error fetching/initializing chats:', error.message);
-        res.status(500).json({ message: "Server error while fetching chats." });
+        res.status(500).json({ message: "Error fetching chats", error: error.message });
     }
 };
 
 /**
- * Отримати деталі одного чату за його ID.
+ * Отримати деталі одного чату за його ID
  * @route GET /api/chats/:chatId
  */
 export const getChatById = async (req, res) => {
     const ownerId = getOwnerId(req);
     const { id } = req.params;
 
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
     if (!ownerId) {
         return res.status(401).json({ message: "Authentication required." });
     }
     
     try {
-        const chat = await Chat.findOne({ _id: id, ownerId });
+        const chat = await Chat.findById(id);
 
         if (!chat) {
-            return res.status(404).json({ message: "Chat not found or access denied." });
+            return res.status(404).json({ message: `Chat not found ${id} ` });
+        }
+
+        // ПЕРЕВІРКА ВЛАСНОСТІ: чат повинен належати поточному власнику
+        if (chat.ownerId.toString() !== ownerId.toString()) {
+            return res.status(403).json({ message: "Access denied: Chat does not belong to owner." });
         }
 
         res.status(200).json(chat);
     } catch (error) {
-        console.error('Error fetching chat details:', error.message);
-        res.status(500).json({ message: "Server error while fetching chat details." });
+        res.status(500).json({ message: "Error fetching chat details", error: error.message });
     }
 };
 
 /**
- * Створити новий чат.
+ * Створити новий чат
  * @route POST /api/chats
  */
 export const createChat = async (req, res) => {
     const { firstName, lastName } = req.body;
     const ownerId = getOwnerId(req);
 
-    if (!ownerId) return res.status(401).json({ message: "Authentication required." });
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
+    if (!ownerId)
+        return res.status(401).json({ message: "Authentication required." });
+
     if (!firstName || !lastName) {
         return res.status(400).json({ message: 'First name and last name are required.' });
     }
@@ -197,13 +210,12 @@ export const createChat = async (req, res) => {
         
         res.status(201).json(newChat);
     } catch (error) {
-        console.error('Error creating chat:', error.message);
-        res.status(500).json({ message: 'Server error while creating chat.' });
+        res.status(500).json({ message: 'Error creating chat', error: error.message });
     }
 };
 
 /**
- * Оновити існуючий чат (ім'я та прізвище).
+ * Оновити існуючий чат (ім'я та прізвище)
  * @route PUT /api/chats/:id
  */
 export const updateChat = async (req, res) => {
@@ -211,166 +223,178 @@ export const updateChat = async (req, res) => {
     const { firstName, lastName } = req.body;
     const ownerId = getOwnerId(req);
 
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
     if (!ownerId) return res.status(401).json({ message: "Authentication required." });
+
+    // ПЕРЕВІРКА ВЛАСНОСТІ: Шукаємо чат, що належить власнику
+    const chat = await Chat.findOne({ _id: id, ownerId });
+    if (!chat) return res.status(403).json({ message: "Access denied: Chat not found or does not belong to owner." });
+
     if (!firstName || !lastName) {
         return res.status(400).json({ message: 'First name and last name are required for update.' });
     }
 
     try {
-        // Знайти та оновити в одній операції, перевіряючи власність
-        const updatedChat = await Chat.findOneAndUpdate(
-            { _id: id, ownerId },
+        const updatedChat = await Chat.findByIdAndUpdate(
+            id,
             { firstName, lastName },
             { new: true, runValidators: true }
         );
 
         if (!updatedChat) {
-            return res.status(404).json({ message: 'Chat not found or access denied.' });
+            // Це не повинно трапитись, оскільки ми знайшли його вище
+            return res.status(404).json({ message: 'Chat not found.' });
         }
 
         res.status(200).json(updatedChat);
     } catch (error) {
-        console.error('Error updating chat:', error.message);
-        res.status(500).json({ message: 'Server error while updating chat.' });
+        res.status(500).json({ message: 'Error updating chat', error: error.message });
     }
 };
 
 /**
- * Видалити чат та всі пов'язані повідомлення.
+ * Видалити чат та всі пов'язані повідомлення
  * @route DELETE /api/chats/:id
  */
 export const deleteChat = async (req, res) => {
     const { id } = req.params;
     const ownerId = getOwnerId(req);
 
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
     if (!ownerId) return res.status(401).json({ message: "Authentication required." });
 
+    // ПЕРЕВІРКА ВЛАСНОСТІ: Шукаємо чат, що належить власнику
+    const chat = await Chat.findOne({ _id: id, ownerId });
+    if (!chat) return res.status(403).json({ message: "Access denied: Chat not found or does not belong to owner." });
+
     try {
-        // Видалення чату з перевіркою власності
-        const deleteChatResult = await Chat.deleteOne({ _id: id, ownerId });
+        // Видалення чату (перевірка власності вже була вище)
+        await Chat.findByIdAndDelete(id);
 
-        if (deleteChatResult.deletedCount === 0) {
-            return res.status(404).json({ message: "Chat not found or access denied." });
-        }
-
-        // Видаляємо всі повідомлення, пов'язані з цим чатом
+        // Видаляємо всі повідомлення, пов'язані з цим чатом 
         await Message.deleteMany({ chat: id });
 
         res.status(200).json({ message: 'Chat and all messages deleted successfully.' });
     } catch (error) {
-        console.error('Error deleting chat:', error.message);
-        res.status(500).json({ message: 'Server error while deleting chat.' });
+        res.status(500).json({ message: 'Error deleting chat', error: error.message });
     }
 };
 
 // ====================================================================
-// C. КОНТРОЛЕРИ ПОВІДОМЛЕНЬ
+// B. ПОВІДОМЛЕННЯ ТА АВТО-ВІДПОВІДЬ
 // ====================================================================
 
 /**
- * Отримати історію повідомлень для конкретного чату.
+ * Отримати історію повідомлень для конкретного чату
  * @route GET /api/chats/:chatId/messages
  */
 export const getMessages = async (req, res) => {
     const { chatId } = req.params;
-    const ownerId = getOwnerId(req);
+    const ownerId = getOwnerId(req); // Додано отримання ownerId
 
+    // ПЕРЕВІРКА ВЛАСНОСТІ (власник має бути)
     if (!ownerId) {
         return res.status(401).json({ message: "Authentication required." });
     }
 
     try {
-        // Перевірка власності та існування чату
+        // ПЕРЕВІРКА ВЛАСНОСТІ: Перевіряємо, чи чат належить власнику
         const chat = await Chat.findOne({ _id: chatId, ownerId });
         if (!chat) {
-            return res.status(404).json({ message: "Chat not found or access denied." });
+            return res.status(403).json({ message: "Access denied: Chat not found or does not belong to owner." });
         }
         
+        // Якщо власник є, завантажуємо повідомлення
         const messages = await Message.find({ chat: chatId }).sort({ timestamp: 1 });
         res.status(200).json(messages);
     } catch (error) {
-        console.error('Error fetching messages:', error.message);
-        res.status(500).json({ message: 'Server error while fetching messages.' });
+        res.status(500).json({ message: 'Error fetching messages', error: error.message });
     }
 };
 
 /**
- * Надсилання повідомлення користувачем та ініціація авто-відповіді.
+ * Надсилання повідомлення користувачем та ініціація авто-відповіді
  * @route POST /api/chats/:chatId/messages
  */
 export const sendMessage = async (req, res) => {
     const { chatId } = req.params;
     const { text } = req.body;
+
     const ownerId = getOwnerId(req);
+
+    // ПЕРЕВІРКА ВЛАСНОСТІ: Шукаємо чат, що належить власнику
+    const chat = await Chat.findOne({ _id: chatId, ownerId });
+    if (!chat) return res.status(403).json({ message: "Access denied: Chat not found or does not belong to owner." });
 
     if (!text) {
         return res.status(400).json({ message: 'Message text cannot be empty.' });
     }
 
-    let chat;
-
     try {
-        // Перевірка власності та існування чату
-        chat = await Chat.findOne({ _id: chatId, ownerId });
-        if (!chat) return res.status(404).json({ message: "Chat not found or access denied." });
-
-        // 1. Створення та збереження повідомлення користувача
-        const userMessage = await Message.create({
+        // 1. Створюємо повідомлення користувача
+        const userMessage = new Message({
             chat: chatId,
             text,
             sender: 'user',
             senderId: ownerId,
             incoming: false,
         });
+        await userMessage.save();
 
-        // 2. Оновлення посилання на останнє повідомлення в чаті
+        // Оновлюємо посилання на останнє повідомлення в чаті
         await Chat.findByIdAndUpdate(chatId, { lastMessage: userMessage._id });
 
-        // 3. Відправка підтвердження клієнту
+        // Відправляємо підтвердження клієнту (повідомлення користувача збережено)
         res.status(201).json(userMessage); 
         
-    } catch (error) {
-        console.error('Error sending user message:', error.message);
-        return res.status(500).json({ message: 'Server error while sending message.' });
-    }
-    
-    // 4. ЛОГІКА АВТО-ВІДПОВІДІ (АСИНХРОННА ЧАСТИНА)
-    setTimeout(async () => {
-        try {
-            const quote = await getQuote();
-            
-            const autoResponse = await Message.create({
-                chat: chatId,
-                text: quote,
-                sender: 'auto_response',
-                senderId: chat._id.toString(),
-                incoming: true,
-            });
+        // =================================================================
+        // 2. ЛОГІКА АВТО-ВІДПОВІДІ (АСИНХРОННА ЧАСТИНА)
+        // =================================================================
 
-            // Оновлення lastMessage на авто-відповідь
-            await Chat.findByIdAndUpdate(chatId, { lastMessage: autoResponse._id });
+        // Затримка 3 секунди (вимога ТЗ)
+        setTimeout(async () => {
+            try {
+                const quote = await getQuote(); // Отримуємо цитату
+                
+                const autoResponse = new Message({
+                    chat: chatId,
+                    text: quote,
+                    sender: 'auto_response',
+                    senderId: chat._id.toString(), // Встановлюємо ID чату/бота
+                    incoming: true,
+                });
+                await autoResponse.save();
+                const response = { 
+                    autoResponse: autoResponse.toObject(), // 💡 Перетворюємо Mongoose-об'єкт на простий JS-об'єкт
+                    chat: chat.toObject() // 💡 Також перетворюємо
+                };
+                await Chat.findByIdAndUpdate(chatId, { lastMessage: autoResponse._id });
 
-            if (ioInstance) {
-                // Надсилання нового повідомлення та оновлення списку чатів
-                ioInstance.to(chatId.toString()).emit('new_message', autoResponse.toObject());
-                ioInstance.to(chatId.toString()).emit('chat_list_updated');
+                if (ioInstance) {
+                    ioInstance.to(chatId.toString()).emit('new_message', response);
+
+                    ioInstance.to(chatId.toString()).emit('chat_list_updated');
+                }
+
+            } catch (error) {
+                console.error('Error during auto-response generation:', error.message);
             }
+        }, 3000);
 
-        } catch (error) {
-            console.error('Error during auto-response generation:', error.message);
-        }
-    }, 3000);
+    } catch (error) {
+        res.status(500).json({ message: 'Error sending message', error: error.message });
+    }
 };
 
 
 /**
- * Оновити існуюче власне повідомлення.
+ * Оновити існуюче власне повідомлення
  * @route PUT /api/messages/:id
  */
 export const updateMessage = async (req, res) => {
     const { id } = req.params;
     const { text } = req.body; 
-    const ownerId = getOwnerId(req);
+    const ownerId = getOwnerId(req); // Отримуємо справжній ID власника з аутентифікації
 
     if (!ownerId) {
         return res.status(401).json({ message: "Authentication required." });
@@ -387,9 +411,14 @@ export const updateMessage = async (req, res) => {
             return res.status(404).json({ message: 'Message not found.' });
         }
         
-        // Перевірка прав (власник) та типу (не авто-відповідь)
-        if (message.senderId.toString() !== ownerId.toString() || message.sender !== 'user') { 
-            return res.status(403).json({ message: 'Access denied: You can only edit your own non-bot messages.' });
+        // 1. ПЕРЕВІРКА ПРАВ: Чи senderId повідомлення збігається з ID автентифікованого власника
+        if (message.senderId.toString() !== ownerId.toString()) { 
+             return res.status(403).json({ message: 'You can only edit your own messages.' });
+        }
+        
+        // 2. ПЕРЕВІРКА ТИПУ: Дозволяємо оновлювати лише повідомлення користувача
+        if (message.sender !== 'user') {
+            return res.status(403).json({ message: 'Cannot update auto-response messages.' });
         }
         
         message.text = text;
@@ -403,13 +432,12 @@ export const updateMessage = async (req, res) => {
         res.status(200).json(message);
 
     } catch (error) {
-        console.error('Error updating message:', error.message);
-        res.status(500).json({ message: 'Server error while updating message.' });
+        res.status(500).json({ message: 'Error updating message', error: error.message });
     }
 };
 
 // ====================================================================
-// D. ЕКСПОРТ
+// ЕКСПОРТ
 // ====================================================================
 
 export default {
