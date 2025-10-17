@@ -373,7 +373,7 @@ export const sendMessage = async (req, res) => {
                 if (ioInstance) {
                     ioInstance.to(chatId.toString()).emit('new_message', response);
 
-                    ioInstance.emit('chat_list_updated');
+                    ioInstance.to(chatId.toString()).emit('chat_list_updated');
                 }
 
             } catch (error) {
