@@ -329,13 +329,14 @@ export const sendMessage = async (req, res) => {
                 incoming: true,
             });
             await autoResponse.save();
-            const response = { 
-                autoResponse: autoResponse.toObject(), // 💡 Перетворюємо Mongoose-об'єкт на простий JS-об'єкт
-                chat: chat.toObject() // 💡 Також перетворюємо
-            };
+
             // Оновлення lastMessage на авто-відповідь
             await Chat.findByIdAndUpdate(chatId, { lastMessage: autoResponse._id });
-
+            const populatedResponse = await Message.findById(autoResponse._id)
+            const response = { 
+                autoResponse: populatedResponse.toObject(), // 💡 Перетворюємо Mongoose-об'єкт на простий JS-об'єкт
+                chat: chat.toObject() // 💡 Також перетворюємо
+            };
             if (ioInstance) {
                 // Надсилання нового повідомлення та оновлення списку чатів
                 ioInstance.to(chatId.toString()).emit('new_message', response);
