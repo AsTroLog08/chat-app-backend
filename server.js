@@ -4,7 +4,6 @@ import cors from 'cors'
 import dotevn from 'dotenv'
 import chatRoutes from './routes/chatRoutes.js'; 
 import authRoutes from './routes/authRoutes.js'; 
-import { swaggerDocs } from "./swagger.js";
 import http from 'http';
 import { Server } from "socket.io";
 
@@ -48,8 +47,6 @@ app.get("/", (req, res) => {
 app.use("/api/chats", chatRoutes);
 app.use("/api/messages", chatRoutes);
 app.use("/api/users", authRoutes);
-
-swaggerDocs(app);
 
 app.use((req, res) => {
   res.status(404).send("Route not found");

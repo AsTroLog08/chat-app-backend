@@ -1,5 +1,5 @@
-import Chat from '../models/Chat.js';
-import Message from '../models/Message.js';
+import Chat from '../models/chat.js';
+import Message from '../models/message.js';
 import { ioInstance } from '../server.js';
 import { dogCeo } from '../utils/dogCeo.js';
 import { getQuote } from '../utils/quotable.js';
