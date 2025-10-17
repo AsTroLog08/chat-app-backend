@@ -1,208 +1,68 @@
 import express from 'express';
-import chatController from '../controller/chatController.js';
+// Деструктуризуємо функції-контролери для чистоти коду
+import { 
+    getChats, createChat, getChatById, updateChat, deleteChat,
+    getMessages, sendMessage, updateMessage 
+} from '../controller/chatController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Middleware 'protect' тепер застосовується до всіх маршрутів, оскільки вони потребують ідентифікації
-// користувача (аутентифікованого через JWT) або гостя (через x-guest-id).
-
 // ====================================================================
-// A. ЧАТИ (CRUD)
+// ЧАТИ (CRUD)
 // ====================================================================
 
-// GET /api/chats - Отримати всі чати (з підтримкою пошуку ?q=...)
-router.get('/', protect, chatController.getChats);
+/**
+ * @route GET /
+ * Отримати всі чати (з підтримкою пошуку ?q=...)
+ */
+router.get('/', protect, getChats);
 
-// POST /api/chats - Створити новий чат
-router.post('/', protect, chatController.createChat);
+/**
+ * @route POST /
+ * Створити новий чат
+ */
+router.post('/', protect, createChat);
 
-// Get /api/chats/:id - Отримати деталі чату
-router.get('/:id', protect, chatController.getChatById);
+/**
+ * @route GET /:id
+ * Отримати деталі чату
+ */
+router.get('/:id', protect, getChatById);
 
-// PUT /api/chats/:id - Оновити існуючий чат
-router.put('/:id', protect, chatController.updateChat);
+/**
+ * @route PUT /:id
+ * Оновити існуючий чат
+ */
+router.put('/:id', protect, updateChat);
 
-// DELETE /api/chats/:id - Видалити чат
-router.delete('/:id', protect, chatController.deleteChat);
+/**
+ * @route DELETE /:id
+ * Видалити чат та пов'язані повідомлення
+ */
+router.delete('/:id', protect, deleteChat);
 
 // ====================================================================
-// B. ПОВІДОМЛЕННЯ
+// ПОВІДОМЛЕННЯ
 // ====================================================================
 
-// GET /api/chats/:chatId/messages - Отримати історію повідомлень
-router.get('/:chatId/messages', protect, chatController.getMessages);
+/**
+ * @route GET /:chatId/messages
+ * Отримати історію повідомлень для конкретного чату
+ */
+router.get('/:chatId/messages', protect, getMessages);
 
-// POST /api/chats/:chatId/messages - Відправити повідомлення та ініціювати авто-відповідь
-router.post('/:chatId/messages', protect, chatController.sendMessage);
+/**
+ * @route POST /:chatId/messages
+ * Відправити повідомлення та ініціювати авто-відповідь
+ */
+router.post('/:chatId/messages', protect, sendMessage);
 
-// PUT /api/messages/:id - Оновити власне повідомлення
-router.put('/messages/:id', protect, chatController.updateMessage); 
-
+/**
+ * @route PUT /messages/:id (Зверніть увагу, що тут маршрут починається без ID чату,
+ * що є типовою REST-практикою для оновлення підлеглого ресурсу за його ID)
+ * Оновити власне повідомлення
+ */
+router.put('/messages/:id', protect, updateMessage); 
 
 export default router;
-
-
-
-/**
- * @swagger
- * /api/chats:
- *   get:
- *     summary: Get all chats (optionally filtered by search query)
- *     parameters:
- *       - in: query
- *         name: q
- *         schema:
- *           type: string
- *         description: Search chats by first or last name
- *     responses:
- *       200:
- *         description: List of chats
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Chat'
- *
- *   post:
- *     summary: Create new chat
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Chat'
- *     responses:
- *       201:
- *         description: Chat created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Chat'
- */
-
-/**
- * @swagger
- * /api/chats/{id}:
- *   put:
- *     summary: Update chat by ID
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *         description: Chat ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *     responses:
- *       200:
- *         description: Chat updated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Chat'
- *
- *   delete:
- *     summary: Delete chat by ID
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *         description: Chat ID
- *     responses:
- *       200:
- *         description: Chat deleted successfully
- */
-
-/**
- * @swagger
- * /api/chats/{chatId}/messages:
- *   get:
- *     summary: Get all messages of a chat
- *     parameters:
- *       - name: chatId
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *         description: Chat ID
- *     responses:
- *       200:
- *         description: List of messages in the chat
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Message'
- *
- *   post:
- *     summary: Send a message and receive auto-response
- *     parameters:
- *       - name: chatId
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *         description: Chat ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               text:
- *                 type: string
- *     responses:
- *       200:
- *         description: Message sent successfully (auto-response will be added)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Message'
- */
-
-/**
- * @swagger
- * /api/messages/{id}:
- *   put:
- *     summary: Update your own message
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *         description: Message ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               text:
- *                 type: string
- *                 description: New message text
- *     responses:
- *       200:
- *         description: Message updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Message'
- */

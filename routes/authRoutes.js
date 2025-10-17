@@ -1,14 +1,18 @@
 import express from 'express';
-// 🚩 Імпортуємо функцію-контролер (іменований імпорт)
-import authController from '../controller/authController.js'; 
+import { googleLogin, getMe } from '../controller/authController.js'; 
 
 const router = express.Router();
 
-// 🚩 Визначаємо маршрут, використовуючи функцію-контролер
-router.post('/auth/google', authController.googleLogin);
+/**
+ * @route POST /auth/google
+ * Аутентифікація через Google Access Token.
+ */
+router.post('/auth/google', googleLogin);
 
-// 🚩 Визначаємо маршрут, використовуючи функцію-контролер
-router.get('/auth/me', authController.getMe);
+/**
+ * @route GET /auth/me
+ * Отримати дані поточного користувача за JWT.
+ */
+router.get('/auth/me', getMe);
 
-// 🚩 Експортуємо сам об'єкт Router
 export default router;
